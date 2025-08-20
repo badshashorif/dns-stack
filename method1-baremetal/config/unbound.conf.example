@@ -1,0 +1,66 @@
+##Unbound টিউনিং (performance + security)
+
+##তোমার unbound.conf মোটামুটি ভালো। কিছু বাড়তি best-practice যোগ করো:
+
+
+
+server:
+  interface: 0.0.0.0
+  port: 53
+  do-ip6: no
+
+  # Security hardening
+  hide-identity: yes
+  hide-version: yes
+  harden-referral-path: yes
+  harden-dnssec-stripped: yes
+  aggressive-nsec: yes
+  qname-minimisation: yes
+  minimal-responses: yes
+
+  # Cache / slabs (power-of-two; multi-core এ fragmentation কমে)
+  rrset-cache-size: 256m
+  msg-cache-size: 128m
+  rrset-cache-slabs: 8
+  msg-cache-slabs: 8
+  infra-cache-slabs: 8
+  key-cache-slabs: 8
+
+  # Threads / sockets
+  num-threads: 8
+  so-reuseport: yes
+  so-rcvbuf: 4m
+  so-sndbuf: 4m
+  outgoing-range: 8192
+  num-queries-per-thread: 4096
+
+  # Prefetch / serve-stale
+  cache-min-ttl: 300
+  cache-max-ttl: 14400
+  prefetch: yes
+  prefetch-key: yes
+  serve-expired: yes
+  serve-expired-ttl: 3600
+  serve-expired-client-timeout: 1800
+
+  # ECS support (dnsdist থেকে এলে কাজে লাগে)
+  module-config: "subnetcache validator iterator"
+  edns-client-subnet: yes
+
+  # ACLs (যেমন ছিল)
+  access-control: 127.0.0.1/32 allow
+  access-control: 172.16.0.0/12 allow
+  access-control: 10.0.0.0/8 allow
+  access-control: 45.248.148.0/22 allow
+  access-control: 59.153.100.0/22 allow
+  # ... (তোমার বাকি রেঞ্জ)
+
+  private-address: 192.168.0.0/16
+  private-address: 169.254.0.0/16
+  private-address: 172.16.0.0/12
+  private-address: 10.0.0.0/8
+  private-address: fd00::/8
+  private-address: fe80::/10
+
+  chroot: ""
+  logfile: /var/log/unbound.log
