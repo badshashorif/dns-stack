@@ -1,0 +1,106 @@
+services:
+  # --- Unbound recursive resolvers (x3) ---
+  unbound-1:
+    image: mvance/unbound:latest
+    container_name: unbound-1
+    restart: unless-stopped
+    volumes:
+      - ./unbound/unbound-1.conf:/opt/unbound/etc/unbound/unbound.conf:ro
+    networks: [dnsnet]
+    ports:
+      - "5311:53/udp"
+      - "5311:53/tcp"
+
+  unbound-2:
+    image: mvance/unbound:latest
+    container_name: unbound-2
+    restart: unless-stopped
+    volumes:
+      - ./unbound/unbound-2.conf:/opt/unbound/etc/unbound/unbound.conf:ro
+    networks: [dnsnet]
+    ports:
+      - "5312:53/udp"
+      - "5312:53/tcp"
+
+  unbound-3:
+    image: mvance/unbound:latest
+    container_name: unbound-3
+    restart: unless-stopped
+    volumes:
+      - ./unbound/unbound-3.conf:/opt/unbound/etc/unbound/unbound.conf:ro
+    networks: [dnsnet]
+    ports:
+      - "5313:53/udp"
+      - "5313:53/tcp"
+
+  # --- dnsdist load balancer ---
+  dnsdist:
+    image: powerdns/dnsdist-19:latest
+    container_name: dnsdist
+    depends_on: [unbound-1, unbound-2, unbound-3]
+    restart: unless-stopped
+    networks: [dnsnet]
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "5353:5353/udp"   # optional extra listener (edit conf to use)
+      - "5353:5353/tcp"
+    volumes:
+      - ./dnsdist/dnsdist.conf:/etc/dnsdist/dnsdist.conf:ro
+
+  # --- Guacamole DB init (writes SQL into shared volume) ---
+  guac-init:
+    image: "guacamole/guacamole:${GUAC_VER}"
+    container_name: guac-init
+    command: ["/bin/sh","-lc","/opt/guacamole/bin/initdb.sh --mysql > /init/001-initdb.sql"]
+    restart: "no"
+    volumes:
+      - guac-init:/init
+
+  # --- MariaDB for Guacamole (loads SQL from init volume on first start) ---
+  mariadb:
+    image: mariadb:10.11
+    container_name: mariadb
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${GUAC_DB}
+      - MYSQL_USER=${GUAC_USER}
+      - MYSQL_PASSWORD=${GUAC_PASS}
+    volumes:
+      - guac-db:/var/lib/mysql
+      - guac-init:/docker-entrypoint-initdb.d:ro
+    networks: [dnsnet]
+    depends_on: [guac-init]
+
+  # --- guacd (protocol daemon) ---
+  guacd:
+    image: "guacamole/guacd:${GUAC_VER}"
+    container_name: guacd
+    restart: unless-stopped
+    networks: [dnsnet]
+
+  # --- Guacamole web app ---
+  guacamole:
+    image: "guacamole/guacamole:${GUAC_VER}"
+    container_name: guacamole
+    restart: unless-stopped
+    depends_on: [mariadb, guacd]
+    environment:
+      - MYSQL_HOSTNAME=mariadb
+      - MYSQL_DATABASE=${GUAC_DB}
+      - MYSQL_USER=${GUAC_USER}
+      - MYSQL_PASSWORD=${GUAC_PASS}
+      - GUACD_HOSTNAME=guacd
+      - GUACD_PORT=4822
+    ports:
+      - "8080:8080"
+    networks: [dnsnet]
+
+networks:
+  dnsnet:
+    driver: bridge
+
+volumes:
+  guac-db:
+  guac-init:
